@@ -13,20 +13,18 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(event.request));
 });
 
-// Handle schedule messages from the app
+// Handle immediate show messages from the app
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SCHEDULE_NOTIFICATION') {
-    const { title, body, delay } = event.data;
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, body } = event.data;
     
-    setTimeout(() => {
-      self.registration.showNotification(title, {
-        body: body,
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        vibrate: [200, 100, 200],
-        tag: 'lumos-reminder'
-      });
-    }, delay);
+    self.registration.showNotification(title, {
+      body: body,
+      icon: '/img/checklist-192.png',
+      badge: '/img/checklist-192.png',
+      vibrate: [200, 100, 200],
+      tag: 'lumos-reminder'
+    });
   }
 });
 
