@@ -111,7 +111,6 @@ export default function App() {
   const [isCompletedCollapsed, setIsCompletedCollapsed] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
@@ -119,38 +118,7 @@ export default function App() {
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
       setIsStandalone(true);
     }
-
-    const handleBeforeInstall = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    const handleAppInstalled = () => {
-      setDeferredPrompt(null);
-      setIsStandalone(true);
-      console.log('Lumos was installed');
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
   }, []);
-
-  const handleInstallClick = () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then((choiceResult: any) => {
-        if (choiceResult.outcome === 'accepted') {
-          setIsStandalone(true);
-        }
-        setDeferredPrompt(null);
-      });
-    }
-  };
 
   useEffect(() => {
     localStorage.setItem('lumos_tasks', JSON.stringify(tasks));
@@ -379,15 +347,6 @@ export default function App() {
         </nav>
         
         <div className="mt-auto pt-10 space-y-2">
-          {deferredPrompt && !isStandalone && (
-            <button 
-              onClick={handleInstallClick}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold text-accent bg-accent/5 hover:bg-accent/10 transition-colors"
-            >
-              <Bell className="w-5 h-5 animate-pulse" />
-              Install App
-            </button>
-          )}
           <button 
             onClick={() => setDarkMode(!darkMode)}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-app-text-sub hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
