@@ -112,12 +112,32 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    window.addEventListener('beforeinstallprompt', (e) => {
+    // Check if already running in standalone mode
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsStandalone(true);
+    }
+
+    const handleBeforeInstall = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-    });
+    };
+
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setIsStandalone(true);
+      console.log('Lumos was installed');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   }, []);
 
   const handleInstallClick = () => {
@@ -125,7 +145,7 @@ export default function App() {
       deferredPrompt.prompt();
       deferredPrompt.userChoice.then((choiceResult: any) => {
         if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted the install prompt');
+          setIsStandalone(true);
         }
         setDeferredPrompt(null);
       });
@@ -359,7 +379,7 @@ export default function App() {
         </nav>
         
         <div className="mt-auto pt-10 space-y-2">
-          {deferredPrompt && (
+          {deferredPrompt && !isStandalone && (
             <button 
               onClick={handleInstallClick}
               className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-bold text-accent bg-accent/5 hover:bg-accent/10 transition-colors"
