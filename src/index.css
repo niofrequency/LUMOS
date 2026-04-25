@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  
+  /* Semantic Colors */
+  --color-accent: #0071E3;
+  --color-app-bg: var(--bg-primary);
+  --color-app-sidebar: var(--bg-sidebar);
+  --color-app-card: var(--bg-card);
+  --color-app-text-main: var(--text-primary);
+  --color-app-text-sub: var(--text-secondary);
+  --color-app-border: var(--border-color);
+}
+
+@layer base {
+  :root {
+    --bg-primary: #F5F5F7;
+    --bg-sidebar: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --text-primary: #1D1D1F;
+    --text-secondary: #86868B;
+    --border-color: #E5E5E7;
+  }
+
+  .dark {
+    --bg-primary: #000000;
+    --bg-sidebar: #121212;
+    --bg-card: #1C1C1E;
+    --text-primary: #FFFFFF;
+    --text-secondary: #8E8E93;
+    --border-color: #2C2C2E;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-app-bg text-app-text-main antialiased font-sans transition-colors duration-300;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Force Tailwind dark mode to use the .dark class */
+@variant dark (&:where(.dark, .dark *));
+
+.premium-shadow {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.dark .premium-shadow {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+

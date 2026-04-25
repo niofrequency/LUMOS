@@ -1,0 +1,6 @@
+{
+  "name": "LUMOS",
+  "description": "A premium, minimalist PWA to-do list for focused productivity.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": []
+}
