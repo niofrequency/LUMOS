@@ -64,28 +64,6 @@ const formatDateWithDay = (dateStr: string) => {
   return `${dayName}, ${dateStr}`;
 };
 
-const scheduleNotification = (task: Task) => {
-  if (!('serviceWorker' in navigator)) return;
-  if (!task.dueDate) return;
-
-  const [y, m, d] = task.dueDate.split('-').map(Number);
-  const [hh, mm] = (task.dueTime || '09:00').split(':').map(Number);
-  const targetTime = new Date(y, m - 1, d, hh, mm).getTime();
-  const now = Date.now();
-  const delay = targetTime - now;
-
-  if (delay > 0) {
-    navigator.serviceWorker.ready.then((registration) => {
-      registration.active?.postMessage({
-        type: 'SCHEDULE_NOTIFICATION',
-        title: 'Task Reminder',
-        body: task.text,
-        delay: Math.min(delay, 2147483647), // Max delay for setTimeout
-      });
-    });
-  }
-};
-
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('lumos_tasks');
@@ -113,17 +91,19 @@ export default function App() {
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
+  // Standalone Check
   useEffect(() => {
-    // Check if already running in standalone mode
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
       setIsStandalone(true);
     }
   }, []);
 
+  // Save to LocalStorage
   useEffect(() => {
     localStorage.setItem('lumos_tasks', JSON.stringify(tasks));
   }, [tasks]);
 
+  // Dark Mode Toggle
   useEffect(() => {
     localStorage.setItem('lumos_dark_mode', String(darkMode));
     if (darkMode) {
@@ -133,11 +113,64 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Taskbar Icon Badge Count
+  useEffect(() => {
+    if ('setAppBadge' in navigator) {
+      const today = new Date().toISOString().split('T')[0];
+      const activeTaskCount = tasks.filter(t => (!t.dueDate || t.dueDate <= today) && !t.completed).length;
+      
+      if (activeTaskCount > 0) {
+        navigator.setAppBadge(activeTaskCount).catch(console.error);
+      } else {
+        navigator.clearAppBadge().catch(console.error);
+      }
+    }
+  }, [tasks]);
+
+  // Notification Permission Check
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       setShowNotificationPrompt(true);
     }
   }, []);
+
+  // NEW: Bulletproof Background Poller for Reminders
+  useEffect(() => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    const checkReminders = () => {
+      const now = new Date();
+      const currentYMD = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      const currentHM = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+      tasks.forEach(task => {
+        if (!task.completed && task.dueDate === currentYMD && task.dueTime === currentHM) {
+          // Check if we already notified this exact minute to prevent looping spam
+          const notifiedKey = `lumos_notified_${task.id}`;
+          const lastNotified = localStorage.getItem(notifiedKey);
+          
+          if (lastNotified !== currentHM) {
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.ready.then((registration) => {
+                registration.active?.postMessage({
+                  type: 'SHOW_NOTIFICATION',
+                  title: 'Lumos Reminder',
+                  body: task.text,
+                });
+              });
+            }
+            // Mark as notified for this specific minute
+            localStorage.setItem(notifiedKey, currentHM);
+          }
+        }
+      });
+    };
+
+    // Run once immediately, then check every 30 seconds
+    checkReminders();
+    const interval = setInterval(checkReminders, 30000);
+    return () => clearInterval(interval);
+  }, [tasks]);
 
   const requestNotificationPermission = async () => {
     const permission = await Notification.requestPermission();
@@ -159,11 +192,6 @@ export default function App() {
         dueTime: dueTime || undefined,
         repeat: repeat,
       } : t));
-      
-      // Schedule reminder for the updated task
-      const updatedTask = tasks.find(t => t.id === editingTaskId);
-      if (updatedTask) scheduleNotification({ ...updatedTask, text: inputText, dueDate, dueTime });
-      
       setEditingTaskId(null);
     } else {
       const newTask: Task = {
@@ -176,15 +204,9 @@ export default function App() {
         repeat: repeat,
         createdAt: Date.now(),
       };
-
       setTasks([newTask, ...tasks]);
-      
-      if ((newTask.dueDate || newTask.dueTime)) {
-        scheduleNotification(newTask);
-      }
     }
     
-    // Reset form
     setInputText('');
     setDueDate('');
     setDueTime('');
@@ -209,10 +231,8 @@ export default function App() {
 
     const isNowCompleted = !task.completed;
 
-    // Update current task state
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: isNowCompleted } : t));
 
-    // If marking as complete and it has a repeat pattern
     if (isNowCompleted && task.repeat !== 'None') {
       const baseDate = task.dueDate || new Date().toISOString().split('T')[0];
       const nextDate = getNextOccurrence(baseDate, task.repeat);
@@ -225,14 +245,9 @@ export default function App() {
         createdAt: Date.now() + 1,
       };
 
-      // Ensure notification is scheduled for the next one
-      scheduleNotification(nextTask);
-
-      // Add the next occurrence and then handle removal
       setTimeout(() => {
         setTasks(current => {
           const filtered = current.filter(t => t.id !== id || !t.completed);
-          // Check if we already created this next occurrence (to avoid duplicates if double clicked)
           const alreadyExists = filtered.some(t => t.text === nextTask.text && t.dueDate === nextTask.dueDate && !t.completed);
           return alreadyExists ? filtered : [nextTask, ...filtered];
         });
@@ -257,7 +272,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-app-bg text-app-text-main transition-colors duration-300 font-sans">
-      {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
           <motion.div
@@ -270,7 +284,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
       <aside className={`
         fixed lg:relative z-50 lg:z-auto h-full w-[280px] flex flex-col border-r border-app-border bg-app-sidebar px-6 py-10 transition-transform duration-300
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -357,9 +370,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 relative flex flex-col h-full overflow-hidden">
-        {/* Mobile Top Bar */}
         <div className="lg:hidden w-full bg-app-bg/80 backdrop-blur-md border-b border-app-border sticky top-0 z-30 px-6 py-2 flex items-center justify-start">
           <button 
             onClick={() => setIsSidebarOpen(true)}
@@ -370,7 +381,33 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-8 lg:px-24">
-          {/* Header */}
+          
+          <AnimatePresence>
+            {showNotificationPrompt && (
+              <motion.div 
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="mb-8 p-4 bg-accent/10 border border-accent/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-accent/20 rounded-full">
+                    <Bell className="w-5 h-5 text-accent" />
+                  </div>
+                  <p className="text-sm font-medium text-app-text-main">
+                    Enable notifications to get desktop alerts for your reminders.
+                  </p>
+                </div>
+                <button 
+                  onClick={requestNotificationPermission}
+                  className="whitespace-nowrap px-6 py-2 bg-accent text-white text-xs font-bold rounded-xl shadow-lg shadow-accent/20 hover:scale-105 transition-all"
+                >
+                  Enable Notifications
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <header className="mb-8 lg:mb-12 flex flex-col items-center lg:items-start text-center lg:text-left h-auto">
             <div>
               <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-1 text-app-text">
@@ -380,12 +417,8 @@ export default function App() {
                 {new Date().toLocaleDateString('en-US', { weekday: 'long' })}, {new Date().toISOString().split('T')[0]}
               </p>
             </div>
-            <div className="hidden lg:flex items-center gap-3 mt-4 lg:mt-0">
-              {/* Desktop specific header actions */}
-            </div>
           </header>
 
-          {/* New Task Section */}
           <div className={`mb-12 bg-app-card border rounded-3xl premium-shadow overflow-hidden transition-all duration-500 ${editingTaskId ? 'border-accent shadow-[0_0_20px_rgba(0,113,227,0.15)] ring-1 ring-accent/20' : 'border-app-border'}`}>
             <form onSubmit={addTask} className="p-2">
               <div className="flex items-center gap-4 px-4 h-14">
@@ -424,7 +457,6 @@ export default function App() {
                           Currently Editing Mode
                         </div>
                       )}
-                      {/* Grid for settings */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-4">
                           <div className="flex items-center gap-3">
@@ -506,9 +538,7 @@ export default function App() {
             </form>
           </div>
 
-          {/* List Section */}
           <div className="space-y-4">
-            {/* Active Section */}
             {filteredTasks.some(t => {
               const today = new Date().toISOString().split('T')[0];
               return (!t.dueDate || t.dueDate <= today) && !t.completed;
@@ -618,7 +648,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Upcoming Section */}
             {filteredTasks.some(t => t.dueDate && t.dueDate > new Date().toISOString().split('T')[0] && !t.completed) && (
               <div className="mt-8">
                 <button 
@@ -706,7 +735,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Completed Section (Optional, showing for completeness if user wants but specifically asked for active) */}
             {filteredTasks.some(t => t.completed) && (
               <div className="mt-8">
                 <button 
@@ -755,18 +783,10 @@ export default function App() {
                 </AnimatePresence>
               </div>
             )}
-
-            {filteredTasks.length === 0 && (
-              <div className="py-24 text-center text-app-text-sub/30 text-sm italic">
-                {/* Clean list */}
-              </div>
-            )}
           </div>
-          {/* Add padding at bottom to prevent overlap with FAB on mobile */}
           <div className="h-32 lg:hidden" />
         </div>
 
-        {/* FAB for Mobile */}
         <button 
           onClick={() => setShowOptions(!showOptions)}
           className="lg:hidden absolute bottom-8 left-1/2 -translate-x-1/2 w-16 h-16 bg-white dark:bg-black text-black dark:text-white rounded-full flex items-center justify-center text-3xl shadow-xl border border-app-border hover:scale-105 active:scale-95 transition-all z-30"
